@@ -25,8 +25,8 @@ jobs:
       - name: Run Bearer scan (non-blocking)
         run: |
           mkdir -p bearer_reports
-          # Run scan and save report explicitly
-          bearer scan . \
+          # Run scan using the correct command
+          bearer start . \
             --scanner sast \
             --format json \
             --output bearer_reports/bearer-report.json || true
