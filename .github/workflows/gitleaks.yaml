@@ -1,0 +1,66 @@
+name: Gitleaks Security Scan
+
+on:
+  workflow_dispatch: {}
+  pull_request: {}
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - .github/workflows/gitleaks-sarif.yml
+  schedule:
+    - cron: '17 2 * * *'  # Runs daily at 02:17 UTC
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  gitleaks:
+    name: Run Gitleaks and Upload SARIF
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Checkout repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed to scan full git history
+
+      # 2️⃣ Run Gitleaks scan
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2.3.0
+        with:
+          args: detect --source . --report-format sarif --report-path /home/runner/work/gitleaks-report.sarif --redact
+
+      # 3️⃣ Debug step: verify SARIF file existence
+      - name: Verify SARIF file
+        id: verify_sarif
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Listing all SARIF files:"
+          find /home/runner/work -name "*.sarif" || true
+
+          if [ -f "/home/runner/work/gitleaks-report.sarif" ]; then
+            echo "SARIF file found ✅"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ No SARIF report found! Gitleaks may not have generated one."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      # 4️⃣ Upload SARIF report (only if it exists)
+      - name: Upload SARIF report
+        if: steps.verify_sarif.outputs.exists == 'true'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: /home/runner/work/gitleaks-report.sarif
+
+      # 5️⃣ Fallback info if report missing
+      - name: Log missing report
+        if: steps.verify_sarif.outputs.exists == 'false'
+        run: |
+          echo "Skipping SARIF upload since no report was generated."
+          echo "This can happen if Gitleaks found no leaks or the action failed silently."
