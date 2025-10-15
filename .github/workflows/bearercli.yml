@@ -1,0 +1,33 @@
+name: Bearer Security Scan
+
+on:
+  workflow_dispatch:
+
+jobs:
+  bearer-scan:
+    name: Run Bearer Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js (Bearer CLI requires Node.js)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+
+      - name: Install Bearer CLI
+        run: |
+          npm install -g @bearer/cli
+
+      - name: Run Bearer scan (non-blocking)
+        run: |
+          mkdir -p bearer_reports
+          bearer scan . --format json --output bearer_reports/bearer-report.json || true
+
+      - name: Upload Bearer JSON report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bearer-report
+          path: bearer_reports/bearer-report.json
