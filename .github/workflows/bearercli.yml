@@ -25,15 +25,14 @@ jobs:
       - name: Run Bearer scan (non-blocking)
         run: |
           mkdir -p bearer_reports
-          # Always generate a JSON report, even if no issues are found
+          # Run scan and save report explicitly
           bearer scan . \
             --scanner sast \
-            --output bearer_reports/bearer-report.json \
-            --output-format json \
-            --exit-code 0 || true
-
-          echo "Generated files:"
-          ls -la bearer_reports || echo "No report found!"
+            --format json \
+            --output bearer_reports/bearer-report.json || true
+          
+          echo "Listing output files:"
+          ls -la bearer_reports
 
       - name: Upload Bearer JSON report
         if: always()
