@@ -12,7 +12,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js (Bearer CLI requires Node.js)
+      - name: Set up Node.js (Bearer CLI)
         uses: actions/setup-node@v4
         with:
           node-version: '18.x'
@@ -21,10 +21,14 @@ jobs:
         run: |
           npm install -g @bearer/cli
 
+      - name: Verify Bearer installation
+        run: bearer --version
+
       - name: Run Bearer scan (non-blocking)
         run: |
           mkdir -p bearer_reports
-          bearer scan . --format json --output bearer_reports/bearer-report.json || true
+          bearer scan . --format json --output bearer_reports/bearer-report.json --force || true
+          ls -la bearer_reports  # Debug: confirm report exists
 
       - name: Upload Bearer JSON report
         uses: actions/upload-artifact@v4
