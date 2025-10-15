@@ -1,3 +1,5 @@
+name: Gitleaks Security Scan
+
 on:
   workflow_dispatch: {}
   pull_request: {}
@@ -6,29 +8,38 @@ on:
       - main
       - master
     paths:
-      - .github/workflows/gitleaks.yml
+      - .github/workflows/gitleaks-sarif.yml
   schedule:
-    - cron: '17 2 * * *'
+    - cron: '17 2 * * *'  # Runs daily at 02:17 UTC
 
-name: Gitleaks
+permissions:
+  contents: read
+  security-events: write
 
 jobs:
   gitleaks:
-    name: Run Gitleaks
+    name: Run Gitleaks and Upload SARIF
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
+
     steps:
+      # 1️⃣ Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed to scan full git history
 
+      # 2️⃣ Run Gitleaks scan
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
         with:
           args: detect --source . --report-format sarif --report-path gitleaks-report.sarif --redact
 
-      - name: Upload SARIF report to GitHub Security tab
+      # 3️⃣ Debug: list files to confirm SARIF creation
+      - name: List files for verification
+        run: ls -lah
+
+      # 4️⃣ Upload SARIF report to GitHub Security tab
+      - name: Upload SARIF report
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gitleaks-report.sarif
