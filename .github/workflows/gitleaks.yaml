@@ -10,7 +10,7 @@ on:
     paths:
       - .github/workflows/gitleaks-sarif.yml
   schedule:
-    - cron: '17 2 * * *'  # Runs daily at 02:17 UTC
+    - cron: '17 2 * * *'
 
 permissions:
   contents: read
@@ -23,20 +23,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Needed to scan full git history
+          fetch-depth: 0
 
-      # 2️⃣ Install Gitleaks manually (latest binary)
       - name: Install Gitleaks
         run: |
           curl -sSL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64 -o gitleaks
           chmod +x gitleaks
           sudo mv gitleaks /usr/local/bin/
 
-      # 3️⃣ Run Gitleaks and ensure SARIF report is generated
       - name: Run Gitleaks scan
         run: |
           mkdir -p /home/runner/work/reports
@@ -46,12 +43,27 @@ jobs:
             --report-path /home/runner/work/reports/gitleaks-report.sarif \
             --redact || true
 
-          # Ensure file exists even if Gitleaks found nothing
+          # Ensure a valid SARIF file always exists
           if [ ! -s /home/runner/work/reports/gitleaks-report.sarif ]; then
-            echo '{"version":"2.1.0","runs":[]}' > /home/runner/work/reports/gitleaks-report.sarif
+            cat <<EOF > /home/runner/work/reports/gitleaks-report.sarif
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Gitleaks",
+          "informationUri": "https://github.com/gitleaks/gitleaks",
+          "rules": []
+        }
+      },
+      "results": []
+    }
+  ]
+}
+EOF
           fi
 
-      # 4️⃣ Upload SARIF report to GitHub Security tab
       - name: Upload SARIF report
         uses: github/codeql-action/upload-sarif@v3
         with:
