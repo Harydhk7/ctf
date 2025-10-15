@@ -28,34 +28,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Gitleaks (try direct binary, fall back to tarball)
+      - name: Install Gitleaks
         run: |
           set -e
-          TMPBIN="$(mktemp -d)"
-          cd "$TMPBIN"
-
-          BINURL="https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64"
-          if curl -fsSL "$BINURL" -o gitleaks && [ -s gitleaks ]; then
-            chmod +x gitleaks
-            sudo mv gitleaks /usr/local/bin/gitleaks
-            exit 0
-          fi
-
-          TARBALL_URL="$(curl -fsSLI -o /dev/null -w '%{url_effective}\n' https://github.com/gitleaks/gitleaks/releases/latest | sed 's|/tag/|/download/|')"
-          for name in "gitleaks-linux-amd64.tar.gz" "gitleaks_*-linux_x86_64.tar.gz"; do
-            url="${TARBALL_URL}/${name}"
-            if curl -fsSL "$url" -o gitleaks.tar.gz; then
-              mkdir -p extract && tar -xzf gitleaks.tar.gz -C extract || true
-              if [ -f extract/gitleaks ]; then
-                chmod +x extract/gitleaks
-                sudo mv extract/gitleaks /usr/local/bin/gitleaks
-                exit 0
-              fi
-            fi
-          done
-
-          echo "❌ Could not install Gitleaks via direct binary or tarball"
-          exit 1
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64 -o gitleaks
+          chmod +x gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
 
       - name: Run Gitleaks scan and produce SARIF
         run: |
@@ -64,27 +42,25 @@ jobs:
           REPORT_PATH="${REPORT_DIR}/gitleaks-report.sarif"
           mkdir -p "$REPORT_DIR"
 
+          echo "🔍 Running Gitleaks scan..."
           gitleaks detect --source . --report-format sarif --report-path "$REPORT_PATH" --redact || true
 
           if [ ! -s "$REPORT_PATH" ]; then
-            echo 'Creating minimal valid SARIF file because Gitleaks produced none.'
-            cat > "$REPORT_PATH" <<EOF
-{
-  "version": "2.1.0",
-  "runs": [
-    {
-      "tool": {
-        "driver": {
-          "name": "Gitleaks",
-          "informationUri": "https://github.com/gitleaks/gitleaks",
-          "rules": []
-        }
-      },
-      "results": []
-    }
-  ]
-}
-EOF
+            echo "⚠️ Gitleaks did not produce a SARIF file, creating a minimal valid one."
+            mkdir -p "$(dirname "$REPORT_PATH")"
+            echo '{' > "$REPORT_PATH"
+            echo '  "version": "2.1.0",' >> "$REPORT_PATH"
+            echo '  "runs": [{' >> "$REPORT_PATH"
+            echo '    "tool": {' >> "$REPORT_PATH"
+            echo '      "driver": {' >> "$REPORT_PATH"
+            echo '        "name": "Gitleaks",' >> "$REPORT_PATH"
+            echo '        "informationUri": "https://github.com/gitleaks/gitleaks",' >> "$REPORT_PATH"
+            echo '        "rules": []' >> "$REPORT_PATH"
+            echo '      }' >> "$REPORT_PATH"
+            echo '    },' >> "$REPORT_PATH"
+            echo '    "results": []' >> "$REPORT_PATH"
+            echo '  }]' >> "$REPORT_PATH"
+            echo '}' >> "$REPORT_PATH"
           fi
 
       - name: Verify SARIF file
