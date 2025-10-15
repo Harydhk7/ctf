@@ -26,9 +26,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # A shallow clone is faster for PRs and pushes. 
+          # A shallow clone is faster for PRs and pushes.
           # Full history is needed for scheduled full scans.
-          fetch-depth: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && 0 || 1 }}
+          fetch-depth: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 0 || 1 }}
 
       - name: Run Gitleaks scan and produce SARIF
         # Use a dedicated Gitleaks action for secure and simple installation.
@@ -40,9 +40,8 @@ jobs:
           report-format: sarif
           # Output to a file for later upload
           report-path: gitleaks-report.sarif
-          # This action will fail the job if secrets are found.
-          # The --redact flag is handled internally.
-          # The SARIF report is always created, even if no leaks are found.
+          # The action automatically handles the --redact flag and will
+          # fail the job if secrets are found.
 
       - name: Upload SARIF report
         uses: github/codeql-action/upload-sarif@v3
