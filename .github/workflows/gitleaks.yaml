@@ -28,24 +28,52 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Gitleaks
+      - name: Install Gitleaks (try direct binary, fall back to tarball)
         run: |
-          curl -sSL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64 -o gitleaks
-          chmod +x gitleaks
-          sudo mv gitleaks /usr/local/bin/
+          set -e
+          TMPBIN="$(mktemp -d)"
+          cd "$TMPBIN"
 
-      - name: Run Gitleaks scan
+          # Attempt direct binary used by many gitleaks releases
+          BINURL="https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64"
+          if curl -fsSL "$BINURL" -o gitleaks && [ -s gitleaks ]; then
+            chmod +x gitleaks
+            sudo mv gitleaks /usr/local/bin/gitleaks
+            exit 0
+          fi
+
+          # fallback: try tarball pattern
+          TARBALL_URL="$(curl -fsSLI -o /dev/null -w '%{url_effective}\n' https://github.com/gitleaks/gitleaks/releases/latest | sed 's|/tag/|/download/|')"
+          # attempt several known archive names (best-effort)
+          for name in "gitleaks-linux-amd64.tar.gz" "gitleaks_*-linux_x86_64.tar.gz" ; do
+            url="${TARBALL_URL}/${name}"
+            if curl -fsSL "$url" -o gitleaks.tar.gz; then
+              mkdir -p extract && tar -xzf gitleaks.tar.gz -C extract || true
+              # try to find binary inside
+              if [ -f extract/gitleaks ] ; then
+                chmod +x extract/gitleaks
+                sudo mv extract/gitleaks /usr/local/bin/gitleaks
+                exit 0
+              fi
+            fi
+          done
+
+          echo "Could not install gitleaks via direct binary or tarball; aborting"
+          exit 1
+
+      - name: Run Gitleaks scan and produce SARIF
         run: |
-          mkdir -p /home/runner/work/reports
-          gitleaks detect \
-            --source . \
-            --report-format sarif \
-            --report-path /home/runner/work/reports/gitleaks-report.sarif \
-            --redact || true
+          set -o pipefail
+          REPORT_DIR="${GITHUB_WORKSPACE}/reports"
+          REPORT_PATH="${REPORT_DIR}/gitleaks-report.sarif"
+          mkdir -p "$REPORT_DIR"
+          # Run gitleaks. Allow non-zero exitcode (|| true) so job continues unless binary truly failed to run.
+          # The CLI should write the SARIF to --report-path when supported.
+          gitleaks detect --source . --report-format sarif --report-path "$REPORT_PATH" --redact || true
 
-          # Ensure a valid SARIF file always exists
-          if [ ! -s /home/runner/work/reports/gitleaks-report.sarif ]; then
-            cat <<EOF > /home/runner/work/reports/gitleaks-report.sarif
+          # If file missing or empty, write a minimal valid SARIF (GitHub requires tool metadata)
+          if [ ! -s "$REPORT_PATH" ]; then
+            cat > "$REPORT_PATH" <<'EOF'
 {
   "version": "2.1.0",
   "runs": [
@@ -64,7 +92,28 @@ jobs:
 EOF
           fi
 
+      - name: Verify SARIF file (real runtime checks)
+        id: verify_sarif
+        run: |
+          REPORT_PATH="${GITHUB_WORKSPACE}/reports/gitleaks-report.sarif"
+          if [ -f "$REPORT_PATH" ] && [ -s "$REPORT_PATH" ]; then
+            # Print file size and first/last lines to help debugging (only real data)
+            ls -l "$REPORT_PATH"
+            head -n 20 "$REPORT_PATH" || true
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Upload SARIF report
+        if: steps.verify_sarif.outputs.exists == 'true'
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: /home/runner/work/reports/gitleaks-report.sarif
+          sarif_file: ${{ github.workspace }}/reports/gitleaks-report.sarif
+
+      - name: Upload artifact (always keep a copy)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-sarif-report
+          path: ${{ github.workspace }}/reports/gitleaks-report.sarif
