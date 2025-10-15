@@ -26,64 +26,32 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-
-      - name: Install Gitleaks
-        run: |
-          set -e
-          curl -sSL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64 -o gitleaks
-          chmod +x gitleaks
-          sudo mv gitleaks /usr/local/bin/gitleaks
+          # A shallow clone is faster for PRs and pushes. 
+          # Full history is needed for scheduled full scans.
+          fetch-depth: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && 0 || 1 }}
 
       - name: Run Gitleaks scan and produce SARIF
-        run: |
-          set -o pipefail
-          REPORT_DIR="${GITHUB_WORKSPACE}/reports"
-          REPORT_PATH="${REPORT_DIR}/gitleaks-report.sarif"
-          mkdir -p "$REPORT_DIR"
-
-          echo "🔍 Running Gitleaks scan..."
-          gitleaks detect --source . --report-format sarif --report-path "$REPORT_PATH" --redact || true
-
-          if [ ! -s "$REPORT_PATH" ]; then
-            echo "⚠️ Gitleaks did not produce a SARIF file, creating a minimal valid one."
-            mkdir -p "$(dirname "$REPORT_PATH")"
-            echo '{' > "$REPORT_PATH"
-            echo '  "version": "2.1.0",' >> "$REPORT_PATH"
-            echo '  "runs": [{' >> "$REPORT_PATH"
-            echo '    "tool": {' >> "$REPORT_PATH"
-            echo '      "driver": {' >> "$REPORT_PATH"
-            echo '        "name": "Gitleaks",' >> "$REPORT_PATH"
-            echo '        "informationUri": "https://github.com/gitleaks/gitleaks",' >> "$REPORT_PATH"
-            echo '        "rules": []' >> "$REPORT_PATH"
-            echo '      }' >> "$REPORT_PATH"
-            echo '    },' >> "$REPORT_PATH"
-            echo '    "results": []' >> "$REPORT_PATH"
-            echo '  }]' >> "$REPORT_PATH"
-            echo '}' >> "$REPORT_PATH"
-          fi
-
-      - name: Verify SARIF file
-        id: verify_sarif
-        run: |
-          REPORT_PATH="${GITHUB_WORKSPACE}/reports/gitleaks-report.sarif"
-          if [ -f "$REPORT_PATH" ] && [ -s "$REPORT_PATH" ]; then
-            ls -l "$REPORT_PATH"
-            head -n 20 "$REPORT_PATH" || true
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
+        # Use a dedicated Gitleaks action for secure and simple installation.
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Use the sarif output format
+          report-format: sarif
+          # Output to a file for later upload
+          report-path: gitleaks-report.sarif
+          # This action will fail the job if secrets are found.
+          # The --redact flag is handled internally.
+          # The SARIF report is always created, even if no leaks are found.
 
       - name: Upload SARIF report
-        if: steps.verify_sarif.outputs.exists == 'true'
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: ${{ github.workspace }}/reports/gitleaks-report.sarif
+          sarif_file: gitleaks-report.sarif
 
-      - name: Upload artifact (always keep a copy)
+      - name: Upload artifact (for a local copy)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: gitleaks-sarif-report
-          path: ${{ github.workspace }}/reports/gitleaks-report.sarif
+          path: gitleaks-report.sarif
