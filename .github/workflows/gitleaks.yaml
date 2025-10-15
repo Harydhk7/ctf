@@ -15,6 +15,7 @@ on:
 permissions:
   contents: read
   security-events: write
+  actions: read
 
 jobs:
   gitleaks:
@@ -30,16 +31,36 @@ jobs:
 
       # 2️⃣ Run Gitleaks scan
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v2.3.0
         with:
-          args: detect --source . --report-format sarif --report-path gitleaks-report.sarif --redact
+          args: detect --source . --report-format sarif --report-path /home/runner/work/gitleaks-report.sarif --redact
 
-      # 3️⃣ Debug: list files to confirm SARIF creation
-      - name: List files for verification
-        run: ls -lah
+      # 3️⃣ Debug step: verify SARIF file existence
+      - name: Verify SARIF file
+        id: verify_sarif
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Listing all SARIF files:"
+          find /home/runner/work -name "*.sarif" || true
 
-      # 4️⃣ Upload SARIF report to GitHub Security tab
+          if [ -f "/home/runner/work/gitleaks-report.sarif" ]; then
+            echo "SARIF file found ✅"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ No SARIF report found! Gitleaks may not have generated one."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      # 4️⃣ Upload SARIF report (only if it exists)
       - name: Upload SARIF report
+        if: steps.verify_sarif.outputs.exists == 'true'
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: gitleaks-report.sarif
+          sarif_file: /home/runner/work/gitleaks-report.sarif
+
+      # 5️⃣ Fallback info if report missing
+      - name: Log missing report
+        if: steps.verify_sarif.outputs.exists == 'false'
+        run: |
+          echo "Skipping SARIF upload since no report was generated."
+          echo "This can happen if Gitleaks found no leaks or the action failed silently."
