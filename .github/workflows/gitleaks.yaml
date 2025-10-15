@@ -1,0 +1,38 @@
+on:
+  workflow_dispatch: {}
+  pull_request: {}
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - .github/workflows/gitleaks.yml
+  schedule:
+    # random HH:MM to avoid load spikes on GitHub Actions
+    - cron: '17 2 * * *'
+
+name: Gitleaks
+
+jobs:
+  gitleaks:
+    name: Run Gitleaks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          config-path: .gitleaks.toml  # optional: remove if you don't have a custom config
+          report-format: sarif
+          report-path: gitleaks-report.sarif
+          redact: true
+
+      - name: Upload SARIF report to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks-report.sarif
