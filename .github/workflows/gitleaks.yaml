@@ -34,7 +34,6 @@ jobs:
           TMPBIN="$(mktemp -d)"
           cd "$TMPBIN"
 
-          # Attempt direct binary used by many gitleaks releases
           BINURL="https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks-linux-amd64"
           if curl -fsSL "$BINURL" -o gitleaks && [ -s gitleaks ]; then
             chmod +x gitleaks
@@ -42,15 +41,12 @@ jobs:
             exit 0
           fi
 
-          # fallback: try tarball pattern
           TARBALL_URL="$(curl -fsSLI -o /dev/null -w '%{url_effective}\n' https://github.com/gitleaks/gitleaks/releases/latest | sed 's|/tag/|/download/|')"
-          # attempt several known archive names (best-effort)
-          for name in "gitleaks-linux-amd64.tar.gz" "gitleaks_*-linux_x86_64.tar.gz" ; do
+          for name in "gitleaks-linux-amd64.tar.gz" "gitleaks_*-linux_x86_64.tar.gz"; do
             url="${TARBALL_URL}/${name}"
             if curl -fsSL "$url" -o gitleaks.tar.gz; then
               mkdir -p extract && tar -xzf gitleaks.tar.gz -C extract || true
-              # try to find binary inside
-              if [ -f extract/gitleaks ] ; then
+              if [ -f extract/gitleaks ]; then
                 chmod +x extract/gitleaks
                 sudo mv extract/gitleaks /usr/local/bin/gitleaks
                 exit 0
@@ -58,7 +54,7 @@ jobs:
             fi
           done
 
-          echo "Could not install gitleaks via direct binary or tarball; aborting"
+          echo "❌ Could not install Gitleaks via direct binary or tarball"
           exit 1
 
       - name: Run Gitleaks scan and produce SARIF
@@ -67,13 +63,12 @@ jobs:
           REPORT_DIR="${GITHUB_WORKSPACE}/reports"
           REPORT_PATH="${REPORT_DIR}/gitleaks-report.sarif"
           mkdir -p "$REPORT_DIR"
-          # Run gitleaks. Allow non-zero exitcode (|| true) so job continues unless binary truly failed to run.
-          # The CLI should write the SARIF to --report-path when supported.
+
           gitleaks detect --source . --report-format sarif --report-path "$REPORT_PATH" --redact || true
 
-          # If file missing or empty, write a minimal valid SARIF (GitHub requires tool metadata)
           if [ ! -s "$REPORT_PATH" ]; then
-            cat > "$REPORT_PATH" <<'EOF'
+            echo 'Creating minimal valid SARIF file because Gitleaks produced none.'
+            cat > "$REPORT_PATH" <<EOF
 {
   "version": "2.1.0",
   "runs": [
@@ -92,17 +87,16 @@ jobs:
 EOF
           fi
 
-      - name: Verify SARIF file (real runtime checks)
+      - name: Verify SARIF file
         id: verify_sarif
         run: |
           REPORT_PATH="${GITHUB_WORKSPACE}/reports/gitleaks-report.sarif"
           if [ -f "$REPORT_PATH" ] && [ -s "$REPORT_PATH" ]; then
-            # Print file size and first/last lines to help debugging (only real data)
             ls -l "$REPORT_PATH"
             head -n 20 "$REPORT_PATH" || true
-            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Upload SARIF report
